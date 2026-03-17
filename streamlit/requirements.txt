@@ -1,0 +1,8 @@
+streamlit==1.32.2
+pandas==2.2.1
+psycopg2-binary==2.9.9
+finance-datareader==0.9.60
+plotly==5.20.0
+beautifulsoup4==4.12.3
+requests==2.31.0
+lxml==5.1.0

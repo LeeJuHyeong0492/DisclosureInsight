@@ -1,0 +1,90 @@
+version: '3.8'
+x-airflow-common:
+  &airflow-common
+  build: .
+  env_file:
+    - .env
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+  depends_on:
+    postgres-airflow:
+      condition: service_healthy
+
+services:
+  # 1. Airflow 메타데이터용 DB
+  postgres-airflow:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+
+  # 2. 데이터 웨어하우스(DW)용 DB
+  postgres-dw:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dw_user
+      POSTGRES_PASSWORD: dw_password
+      POSTGRES_DB: finance_dw
+    ports:
+      - "5432:5432" # DBeaver 등 로컬 DB 툴에서 접속하기 위한 포트 개방
+    volumes:
+      - postgres-dw-data:/var/lib/postgresql/data
+
+  # 3. Airflow 초기화 (최초 1회 DB 세팅 및 관리자 계정 생성)
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+
+  # 4. Airflow 웹서버 (UI 화면)
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  # 5. Airflow 스케줄러 (파이프라인 실행 엔진)
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+        
+  # 6. Streamlit 대시보드
+  streamlit-dashboard:
+    build: ./streamlit
+    ports:
+      - "8501:8501" # 웹 브라우저 접속용 포트
+    volumes:
+      - ./streamlit:/app # 코드를 수정하면 컨테이너 재시작 없이 바로 반영되게 연결
+    depends_on:
+      - postgres-dw # DB가 켜진 후에 대시보드가 켜지도록 순서 보장
+
+volumes:
+  postgres-dw-data:

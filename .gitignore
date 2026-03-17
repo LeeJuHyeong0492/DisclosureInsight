@@ -1,0 +1,16 @@
+.env
+
+.venv/
+venv/
+
+__pycache__/
+*.pyc
+.pytest_cache/
+
+logs/
+
+eda/*.json
+raw/
+processed/
+final/
+report/
