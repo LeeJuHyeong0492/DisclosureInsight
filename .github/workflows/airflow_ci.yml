@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'dags/**'
+  workflow_dispatch:
 
 jobs:
   lint-and-test:
