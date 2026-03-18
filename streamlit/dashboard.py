@@ -11,8 +11,8 @@ import numpy as np
 # 1. 페이지 세팅
 # ==========================================
 st.set_page_config(page_title="DART & 주가 인사이트", page_icon="📈", layout="wide")
-st.title("📈 퀀트 인사이트 프로 (Klinecharts 에디션)")
-st.markdown("트레이딩뷰 수준의 부드러운 차트와 공시 이벤트를 연동한 전문가용 대시보드입니다.")
+st.title("📈 퀀트 인사이트")
+st.markdown("차트와 공시 이벤트를 연동한 대시보드입니다.")
 
 # ==========================================
 # 2. DB 데이터 로드 및 전처리
@@ -46,10 +46,10 @@ final_df['stock_code'] = final_df['stock_code'].astype(str).str.zfill(6)
 # ==========================================
 # 3. 탭(Tabs) UI 구성
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["📊 Kline 차트 분석", "🔍 조건 스크리너", "🧪 이벤트 백테스트"])
+tab1, tab2, tab3 = st.tabs(["📊 차트 분석", "🔍 조건 스크리너", "🧪 이벤트 백테스트"])
 
 # ------------------------------------------
-# [Tab 1] Klinecharts (마커 및 툴팁 최적화)
+# [Tab 1] Klinecharts (마커 및 툴팁 최적화 + 상세 정보 패널)
 # ------------------------------------------
 with tab1:
     st.sidebar.header("🔍 [차트] 분석 기업 선택")
@@ -69,14 +69,13 @@ with tab1:
             st.error("주가 데이터를 불러오는데 실패했습니다.")
             st.stop()
 
-    # --- 💡 [수정됨] 차트 데이터 및 마커(점) 데이터 생성 ---
+    # --- 💡 1. 차트 데이터 및 풍부한 상세 정보(eventDetails) 셋팅 ---
     kline_data = []
     annotations = []
 
     for _, row in price_df.iterrows():
         timestamp = int(row['Date'].timestamp() * 1000)
         
-        # 기본 캔들 데이터
         kline = {
             "timestamp": timestamp,
             "open": row['Open'],
@@ -86,36 +85,52 @@ with tab1:
             "volume": row['Volume']
         }
         
-        # 해당 날짜에 공시가 있는지 확인
         match_corp = corp_df[corp_df['date'] == row['Date']]
         if not match_corp.empty:
-            evt_row = match_corp.iloc[0] # 여러 개면 첫 번째 공시 기준
+            evt_row = match_corp.iloc[0] 
             
             # 호재/악재 색상 판별
-            impact_color = '#888888' # 중립(회색)
+            impact_color = '#888888'
             if pd.notna(evt_row.get('op_profit_change_pct')):
                 impact_color = '#ef5350' if float(evt_row['op_profit_change_pct']) > 0 else '#26a69a'
             elif any(kw in str(evt_row.get('clean_report_nm', '')) for kw in ['수주', '공급계약', '흑자전환', '무상증자']):
-                impact_color = '#ef5350' # 호재(빨강)
+                impact_color = '#ef5350'
             elif any(kw in str(evt_row.get('clean_report_nm', '')) for kw in ['유상증자', '적자전환', '소송', '횡령', '배임']):
-                impact_color = '#26a69a' # 악재(파랑)
+                impact_color = '#26a69a'
 
             title = str(evt_row.get('clean_report_nm', ''))
             
-            # 1. 캔들 객체에 툴팁용 데이터 숨겨두기
-            kline['eventTitle'] = title
-            kline['eventColor'] = impact_color
+            # LLM이 추출한 상세 데이터 조합하기
+            extra_info = []
+            if pd.notna(evt_row.get('op_profit_change_pct')):
+                extra_info.append(f"영업이익 증감률: {evt_row['op_profit_change_pct']}%")
+            if pd.notna(evt_row.get('dividend_yield')):
+                extra_info.append(f"시가배당률: {evt_row['dividend_yield']}%")
+            if pd.notna(evt_row.get('turnaround_status')):
+                extra_info.append(f"상태: {evt_row['turnaround_status']}")
             
-            # 2. 캔들 밑에 찍을 '심플한 점(Dot)' 데이터 만들기 (Y축은 저가(Low) 적용)
+            summary_text = str(evt_row.get('summary', '상세 요약 내용이 없습니다.'))
+            if summary_text == 'nan': summary_text = '상세 요약 내용이 없습니다.'
+
+            # 자바스크립트로 넘길 상세 객체 생성
+            kline['eventDetails'] = {
+                "title": title,
+                "date": row['Date'].strftime('%Y-%m-%d'),
+                "color": impact_color,
+                "summary": summary_text,
+                "extra": " | ".join(extra_info) if extra_info else "추가 수치 데이터 없음"
+            }
+            
+            # 캔들을 가리지 않도록 위치를 조정(offset)한 심플 마커
             annotations.append({
                 "timestamp": timestamp,
-                "value": row['Low'], # 👈 캔들의 꼬리 아래에 점을 찍기 위한 정확한 Y좌표!
+                "value": row['Low'], 
                 "color": impact_color
             })
             
         kline_data.append(kline)
 
-    # --- 💡 [수정됨] HTML/JS 렌더링 코드 ---
+    # --- 💡 2. 분리형 UI (차트 + 하단 정보 패널) HTML/JS 렌더링 ---
     html_code = f"""
     <!DOCTYPE html>
     <html lang="ko">
@@ -123,35 +138,57 @@ with tab1:
         <meta charset="utf-8" />
         <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/klinecharts/dist/klinecharts.min.js"></script>
         <style>
-            body {{ margin: 0; padding: 0; background-color: #ffffff; }}
-            #kline-chart {{ width: 100%; height: 600px; }}
+            body {{ margin: 0; padding: 0; background-color: #ffffff; display: flex; flex-direction: column; height: 100vh; font-family: 'Malgun Gothic', sans-serif; }}
+            #kline-chart {{ flex: 1; min-height: 550px; }}
+            #event-panel {{
+                height: 120px; 
+                background-color: #f8f9fa; 
+                border-top: 2px solid #e9ecef; 
+                padding: 15px 25px; 
+                box-sizing: border-box;
+                overflow-y: auto;
+            }}
+            .empty-text {{ color: #adb5bd; text-align: center; margin-top: 25px; font-size: 15px; font-weight: bold; }}
+            .evt-title {{ margin: 0 0 8px 0; font-size: 16px; font-weight: 800; }}
+            .evt-summary {{ margin: 0 0 5px 0; font-size: 14px; color: #495057; line-height: 1.4; }}
+            .evt-extra {{ margin: 0; font-size: 13px; font-weight: 700; color: #0d6efd; }}
         </style>
     </head>
     <body>
         <div id="kline-chart"></div>
+        <div id="event-panel">
+            <div class="empty-text">🖱️ 차트의 마커(점)에 마우스를 올리면 상세 공시 정보가 표시됩니다.</div>
+        </div>
+
         <script>
             var chart = klinecharts.init('kline-chart');
+            var panel = document.getElementById('event-panel');
             
-            // 트레이딩뷰 스타일 및 마우스 호버(Tooltip) 설정
             chart.setStyles({{
                 candle: {{
                     bar: {{
-                        upColor: '#ef5350', downColor: '#26a69a',
-                        noChangeColor: '#888888', upBorderColor: '#ef5350',
-                        downBorderColor: '#26a69a', noChangeBorderColor: '#888888',
-                        upWickColor: '#ef5350', downWickColor: '#26a69a',
-                        noChangeWickColor: '#888888'
+                        upColor: '#ef5350', downColor: '#26a69a', noChangeColor: '#888888',
+                        upBorderColor: '#ef5350', downBorderColor: '#26a69a', noChangeBorderColor: '#888888',
+                        upWickColor: '#ef5350', downWickColor: '#26a69a', noChangeWickColor: '#888888'
                     }},
                     tooltip: {{
-                        // 마우스를 올렸을 때 공시 정보가 있으면 크로스헤어에 추가 표시
+                        // 차트 위 툴팁은 심플하게 가격만 띄우거나 최소화
                         custom: function(data) {{
                             var kline = data.current;
-                            if (kline && kline.eventTitle) {{
-                                return [
-                                    {{ title: '🔔 이벤트', value: kline.eventTitle, color: kline.eventColor }}
-                                ];
+                            if (kline && kline.eventDetails) {{
+                                var d = kline.eventDetails;
+                                // 하단 패널에 HTML 쏴주기
+                                panel.innerHTML = `
+                                    <h4 class="evt-title" style="color: ${{d.color}};">🔔 ${{d.title}} (${{d.date}})</h4>
+                                    <p class="evt-summary">${{d.summary}}</p>
+                                    <p class="evt-extra">📊 ${{d.extra}}</p>
+                                `;
+                                return [{{ title: '이벤트', value: d.title, color: d.color }}];
+                            }} else {{
+                                // 공시가 없는 캔들에 마우스를 올리면 패널 초기화
+                                panel.innerHTML = '<div class="empty-text">해당 일자에는 주요 공시 이벤트가 없습니다.</div>';
+                                return [];
                             }}
-                            return [];
                         }}
                     }}
                 }}
@@ -161,12 +198,12 @@ with tab1:
             chart.applyNewData(chartData);
             chart.createIndicator('VOL', false, {{ height: 100 }});
 
-            // 말풍선을 없애고 심플한 '점(Dot)'으로만 표시
+            // 💡 마커 최적화: 캔들 시야를 가리지 않도록 아주 작고 심플하게
             var annotations = {json.dumps(annotations)};
             annotations.forEach(function(anno) {{
                 chart.createOverlay({{
                     name: 'simpleAnnotation',
-                    extendData: '', // 텍스트 완전히 제거
+                    extendData: '',
                     points: [{{ timestamp: anno.timestamp, value: anno.value }}],
                     styles: {{
                         point: {{
@@ -174,10 +211,10 @@ with tab1:
                             backgroundColor: anno.color,
                             borderColor: '#ffffff',
                             borderSize: 1,
-                            radius: 4 // 차트를 가리지 않는 작고 깔끔한 사이즈
+                            radius: 3 // 크기를 확 줄임
                         }},
-                        line: {{ show: false }}, // 선 숨김
-                        text: {{ show: false }}  // 말풍선 숨김
+                        line: {{ show: false }},
+                        text: {{ show: false }}
                     }}
                 }});
             }});
@@ -185,31 +222,64 @@ with tab1:
     </body>
     </html>
     """
-    components.html(html_code, height=620)
-    
+    # 하단 패널이 추가되었으므로 전체 iframe 높이를 620 -> 750으로 늘려줍니다.
+    components.html(html_code, height=750)
+
 # ------------------------------------------
-# [Tab 2] 퀀트 조건 스크리너 (기존과 동일)
+# [Tab 2] 퀀트 조건 스크리너 (LLM 스키마 100% 반영)
 # ------------------------------------------
 with tab2:
-    st.subheader("🔎 LLM 정형 데이터 기반 조건 검색")
-    col1, col2 = st.columns(2)
+    st.subheader("🔎 LLM 정형 데이터 기반 퀀트 스크리너")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    # 1. 영업이익 증감률 필터
     with col1:
+        min_profit = -100
         if 'op_profit_change_pct' in final_df.columns:
             min_profit = st.slider("최소 영업이익 증감률 (%)", -100, 200, 10)
+            
+    # 2. 시가배당률 필터 (추가됨!)
     with col2:
+        min_dividend = 0.0
+        if 'dividend_yield' in final_df.columns:
+            min_dividend = st.slider("최소 시가배당률 (%)", 0.0, 10.0, 3.0, step=0.5)
+            
+    # 3. 특정 이벤트 필터
+    with col3:
+        selected_events = []
         if 'event_type' in final_df.columns:
             available_events = final_df['event_type'].dropna().unique().tolist()
             selected_events = st.multiselect("특정 이벤트 포함", available_events)
 
     screened_df = final_df.copy()
-    if 'op_profit_change_pct' in final_df.columns:
+
+    # 데이터 타입 변환 (문자열로 들어온 숫자들을 float로 변환)
+    if 'op_profit_change_pct' in screened_df.columns:
         screened_df['op_profit_change_pct'] = pd.to_numeric(screened_df['op_profit_change_pct'], errors='coerce')
+    if 'dividend_yield' in screened_df.columns:
+        screened_df['dividend_yield'] = pd.to_numeric(screened_df['dividend_yield'], errors='coerce')
+
+    # 필터링 적용 (조건을 만족하거나, 해당 값이 아예 없는 다른 유형의 공시이거나)
+    if 'op_profit_change_pct' in screened_df.columns:
         screened_df = screened_df[(screened_df['op_profit_change_pct'].isna()) | (screened_df['op_profit_change_pct'] >= min_profit)]
-    if 'event_type' in final_df.columns and selected_events:
+        
+    if 'dividend_yield' in screened_df.columns:
+        screened_df = screened_df[(screened_df['dividend_yield'].isna()) | (screened_df['dividend_yield'] >= min_dividend)]
+        
+    if 'event_type' in screened_df.columns and selected_events:
         screened_df = screened_df[screened_df['event_type'].isin(selected_events)]
 
-    st.success(f"총 {len(screened_df)}건의 공시가 검색되었습니다.")
-    st.dataframe(screened_df[['corp_name', 'rcept_dt', 'clean_report_nm', 'event_type', 'op_profit_change_pct', 'summary']], use_container_width=True)
+    # 빈 컬럼(NaN) 에러 방지를 위한 동적 컬럼 선택
+    display_columns = ['corp_name', 'rcept_dt', 'clean_report_nm']
+    optional_columns = ['event_type', 'op_profit_change_pct', 'dividend_yield', 'turnaround_status', 'summary', 'evidence_text']
+    
+    for col in optional_columns:
+        if col in screened_df.columns:
+            display_columns.append(col)
+
+    st.success(f"조건을 만족하는 공시가 총 {len(screened_df)}건 검색되었습니다.")
+    st.dataframe(screened_df[display_columns].sort_values(by='rcept_dt', ascending=False), use_container_width=True)
 
 # ------------------------------------------
 # [Tab 3] 이벤트 백테스트 통계 (기존과 동일)
