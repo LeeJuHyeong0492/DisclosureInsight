@@ -41,7 +41,7 @@
 * **모듈화(Modularization):** 단일 DAG 코드를 `dart_api`, `html_parser`, `llm_agent`, `db_utils` 등 기능별로 분리하여 코드 가독성 및 유지보수성 확보.
 
 ### 4. 데이터 시각화 및 백테스트 대시보드 (Streamlit & Klinecharts)
-* HTML/JS를 직접 렌더링하여 트레이딩뷰(TradingView) 수준의 부드러운 **Klinecharts 주가 캔들 차트** 구현.
+* HTML/JS를 직접 렌더링하여 부드러운 **Klinecharts 주가 캔들 차트** 구현.
 * 차트 위 캔들 하단에 공시 발생 시점을 마커(Dot)로 표기하고, 호버(Tooltip) 시 AI가 요약한 공시 이벤트 연동.
 * 공시 발표일(T) 기준 **T+3, T+5 주가 수익률 백테스트 계산기** 구현.
 
