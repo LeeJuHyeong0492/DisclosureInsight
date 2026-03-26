@@ -33,9 +33,17 @@
   2. `Judge`: 추출된 데이터와 원문 팩트를 교차 검증하고, 실패 시 **"어떤 값이 어떻게 틀렸는지" 구체적인 수정 가이드라인(Correction Guideline) 제공.**
   3. `Healer`: Judge의 가이드라인을 바탕으로 데이터를 재수정.
   4. `Re-judge`: **Healer가 수정한 데이터를 다시 평가하여 완벽히 교정되었는지 최종 팩트체크.** 통과하지 못할 경우, 새로운 가이드라인과 함께 Healer에게 다시 반려 (최대 2회 루프 반복).
+<p align="center">
+  <img src="docs\images\Reflexion_image.png" width="90%" alt="Idempotency Diagram">
+</p>
+
 * **성과:** 초기 1차 추출 수율 약 65%에서 **다중 턴 피드백을 통해 95.5% 이상으로 대폭 향상.** 남은 4.5%의 복잡한 표/예외 케이스는 파이프라인 중단 없이 {"error": "수동 확인 요망"} 태그를 달아 적재하는 **Soft Fail를** 적용하여 데이터 누락(Data Loss) 0% 달성.
 
 ### 3. DataOps: 멱등성(Idempotency) 보장 및 CI/CD 구축
+<p align="center">
+  <img src="docs/images/Idempotency_image.png" width="80%" alt="Idempotency Diagram">
+</p>
+
 * **DB 적재 안정성:** 배치 재실행(Retry) 시 데이터 중복을 막기 위해, 공시 고유번호(`rcept_no`)를 Primary Key로 설정하고 PostgreSQL의 `ON CONFLICT DO UPDATE` (UPSERT) 구문을 적용하여 완벽한 멱등성(Idempotency) 확보.
 * **CI/CD 자동화:** GitHub Actions를 도입하여, `main` 브랜치 푸시 시 파이썬 문법 에러를 자동으로 검사하는 CI 파이프라인 구축.
 * **모듈화(Modularization):** 단일 DAG 코드를 `dart_api`, `html_parser`, `llm_agent`, `db_utils` 등 기능별로 분리하여 코드 가독성 및 유지보수성 확보.
@@ -43,8 +51,17 @@
 ### 4. 데이터 시각화 및 백테스트 대시보드 (Streamlit & Klinecharts)
 * HTML/JS를 직접 렌더링하여 부드러운 **Klinecharts 주가 캔들 차트** 구현.
 * 차트 위 캔들 하단에 공시 발생 시점을 마커(Dot)로 표기하고, 호버(Tooltip) 시 AI가 요약한 공시 이벤트 연동.
-* 공시 발표일(T) 기준 **T+3, T+5 주가 수익률 백테스트 계산기** 구현.
+<p align="center">
+  <img src="docs/images/chart_gif.gif" width="80%" alt="Idempotency Diagram">
+</p>
+<p align="center">
+  <img src="docs/images/screener.png" width="80%" alt="Idempotency Diagram">
+</p>
 
+* 공시 발표일(T) 기준 **T+3, T+5 주가 수익률 백테스트 계산기** 구현.
+<p align="center">
+  <img src="docs/images/backtest.png" width="80%" alt="Idempotency Diagram">
+</p>
 ---
 
 ## 🛠️ 기술 스택 (Tech Stack)
